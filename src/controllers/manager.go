@@ -105,7 +105,7 @@ type DomainInfoSend struct {
 	Previous_ssl_grade string
 	Logo               string
 	Title              string
-	Is_down            bool
+	Is_down            bool 
 	Servers            []Servers
 }
 
@@ -117,7 +117,6 @@ func whoisParameters(ip string) (string, string) {
 	organization, err := exec.Command("bash", "-c", cmd2).Output()
 
 	if err != nil {
-		fmt.Println(err.Error())
 		return "", ""
 	}
 
@@ -161,6 +160,12 @@ func OrganizeServers(body string, logo string, title string, serverChanged bool,
 	} else {
 		domainInfoSend.Previous_ssl_grade = previousGrade
 	}
+
+	if len(domainInfoSend.Servers) == 0 {
+		domainInfoSend.Is_down = false
+	} else {
+		domainInfoSend.Is_down = true
+	}
 	return domainInfoSend
 }
 
@@ -169,7 +174,7 @@ type AnswerRequest struct {
 	Name          string
 	Logo          string
 	Title         string
-	RequestHash   string ""
+	RequestHash   string 
 	PreviousGrade string
 	UpdatedDate   int64
 }

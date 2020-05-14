@@ -25,7 +25,7 @@ func GetDomainParameters(ctx *fasthttp.RequestCtx) {
 	data.RequestHash, data.PreviousGrade, data.UpdatedDate = model.GetRowDatabase(db, name)
 	result := controllers.ValidateConditions(db, data)
 	if err != nil {
-		fmt.Println(err)
+		utils.DoJSONWrite(ctx, 400, "Not found information")
 	}
 	utils.DoJSONWrite(ctx, 200, result)
 }
