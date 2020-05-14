@@ -2,7 +2,7 @@ package model
 
 import (
 	"database/sql"
-	"log"
+	"fmt"
 
 	_ "github.com/lib/pq"
 )
@@ -10,8 +10,8 @@ import (
 func ConnectDatabase() (*sql.DB, error) {
 	db, err := sql.Open("postgres", "postgresql://root@gabrielortega:26257/serverinformation?sslmode=disable")
 	if err != nil {
-		log.Fatal("error connecting to the database: ", err)
+		fmt.Println("Falleeeeeeeeeeeeeeeeeeeeeee")
+		return db, err
 	}
-
 	return db, nil
 }

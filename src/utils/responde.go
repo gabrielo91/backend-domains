@@ -16,7 +16,6 @@ func DoJSONWrite(ctx *fasthttp.RequestCtx, code int, obj interface{}) {
 	ctx.Response.Header.Set("Access-Control-Allow-Origin", "*")
 	ctx.Response.Header.SetCanonical(strContentType, strApplicationJSON)
 	ctx.Response.SetStatusCode(code)
-	//start := time.Now()
 	if err := json.NewEncoder(ctx).Encode(obj); err != nil {
 		ctx.Error(err.Error(), fasthttp.StatusInternalServerError)
 	}

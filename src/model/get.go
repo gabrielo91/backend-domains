@@ -2,10 +2,9 @@ package model
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"time"
-
-	_ "github.com/lib/pq"
 )
 
 type DomainsRequests struct {
@@ -18,7 +17,7 @@ func GetAllIdDatabase(db *sql.DB) DomainsRequests {
 
 	rows, err := db.Query(sqlStatement)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
 	defer rows.Close()
 
