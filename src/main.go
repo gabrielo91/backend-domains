@@ -15,11 +15,9 @@ import (
 	"controllers"
 
 	"crypto/sha1"
-	"database/sql"
 
 	_ "github.com/lib/pq"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/fasthttp/router"
 	"github.com/valyala/fasthttp"
 )
@@ -67,42 +65,7 @@ type DomainInfoSend struct {
 	Servers            []Servers
 }
 
-type DomainsRequests struct {
-	Item []string
-}
 
-
-
-func GetHTMLParameters(url string) (string, string, error) {
-	fmt.Println(url)
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", "", err
-	}
-
-	// Convert HTML into goquery document
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return "", "", err
-	}
-
-	logo := ""
-	title := ""
-
-	doc.Find("link").Each(func(i int, s *goquery.Selection) {
-		if name, _ := s.Attr("rel"); name == "shortcut icon" {
-			logoURL, _ := s.Attr("href")
-			logo += logoURL
-		}
-	})
-
-	doc.Find("title").Each(func(i int, s *goquery.Selection) {
-		title += s.Text()
-
-	})
-
-	return logo, title, nil
-}
 
 func OrganizeServers(body string, logo string, title string, serverChanged bool, previousGrade string) DomainInfoSend {
 
@@ -167,7 +130,7 @@ func GetDomainParameters(ctx *fasthttp.RequestCtx) {
 		fmt.Println((err))
 	}
 
-	logo, title, err := GetHTMLParameters(fmt.Sprintf("https://www.%s", ctx.UserValue("name")))
+	logo, title, err := controllers.GetHTMLParameters(fmt.Sprintf("https://www.%s", ctx.UserValue("name")))
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -180,8 +143,7 @@ func GetDomainParameters(ctx *fasthttp.RequestCtx) {
 	if requestHash == "" {
 		bodyHashed := hashedVariable(body)
 		result = OrganizeServers(string(body), logo, title, false, "")
-		model.InsertRowDatabase(db, name, "", bodyHashed, result.Ssl_grade)
-		fmt.Printf("%+v\n", result)
+		model.CreateRowDatabase(db, name, "", bodyHashed, result.Ssl_grade)
 		fmt.Println("New information saved")
 
 	} else {
@@ -194,17 +156,14 @@ func GetDomainParameters(ctx *fasthttp.RequestCtx) {
 			if bodyHashed != requestHash {
 				result = OrganizeServers(string(body), logo, title, true, "")
 				model.UpdateRowDatabase(db, name, bodyHashed, timeNow, result.Ssl_grade)
-				fmt.Printf("%+v\n", result)
 				fmt.Println("Change server")
 			} else {
 				result = OrganizeServers(string(body), logo, title, false, previousGrade)
-				fmt.Printf("%+v\n", result)
 				fmt.Println("Without change")
 
 			}
 		} else {
 			result = OrganizeServers(string(body), logo, title, false, previousGrade)
-			fmt.Printf("%+v\n", result)
 			fmt.Println("Without hour change")
 
 		}
@@ -214,36 +173,13 @@ func GetDomainParameters(ctx *fasthttp.RequestCtx) {
 
 }
 
-func getAllIdDatabase(db *sql.DB) DomainsRequests {
-
-	sqlStatement := `select id FROM domainsV2;`
-
-	rows, err := db.Query(sqlStatement)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-
-	var domainsRequests DomainsRequests
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			log.Fatal(err)
-		}
-		//fmt.Printf("%s", id)
-		domainsRequests.Item = append(domainsRequests.Item, id)
-	}
-	return domainsRequests
-}
-
-
 
 func GetRequests(ctx *fasthttp.RequestCtx) {
 	db, err := model.ConnectDatabase()
 	if err != nil {
 		fmt.Println(err)
 	}
-	result := getAllIdDatabase(db)
+	result := model.GetAllIdDatabase(db)
 	fmt.Println(result)
 	utils.DoJSONWrite(ctx, 200, result)
 }
