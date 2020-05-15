@@ -3,68 +3,19 @@ package controllers
 import (
 	"crypto/sha1"
 	"database/sql"
+	"db"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"os/exec"
-	"strings"
+	"model/domains"
+	"processing"
+	"services"
 	"time"
 
-	"model"
+	"utils"
 
-	"github.com/PuerkitoBio/goquery"
+	"github.com/valyala/fasthttp"
 )
-
-func RequestSSLabs(name string) ([]uint8, error) {
-	urlDomain := fmt.Sprintf("https://api.ssllabs.com/api/v3/analyze?host=%s", name)
-	resp, err := http.Get(urlDomain)
-	if err != nil {
-		fmt.Println("Error")
-	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return body, err
-	}
-	return body, nil
-}
-
-func GetHTMLParameters(url string) (string, string, error) {
-	fmt.Println(url)
-	resp, err := http.Get(url)
-	if err != nil {
-		return "", "", err
-	}
-
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return "", "", err
-	}
-
-	logo := ""
-	doc.Find("link").Each(func(i int, s *goquery.Selection) {
-		if name, _ := s.Attr("rel"); name == "shortcut icon" {
-			logoURL, _ := s.Attr("href")
-			logo += logoURL
-		}
-	})
-
-	title := ""
-	doc.Find("title").Each(func(i int, s *goquery.Selection) {
-		title += s.Text()
-	})
-
-	return logo, title, nil
-}
-
-func hashedVariable(value []byte) string {
-	h := sha1.New()
-	h.Write(value)
-	bs := h.Sum(nil)
-	return hex.EncodeToString(bs)
-}
 
 type Endpoints struct {
 	IpAddress         string
@@ -105,22 +56,15 @@ type DomainInfoSend struct {
 	Previous_ssl_grade string
 	Logo               string
 	Title              string
-	Is_down            bool 
+	Is_down            bool
 	Servers            []Servers
 }
 
-func whoisParameters(ip string) (string, string) {
-	app := "whois"
-	cmd := fmt.Sprintf("%s %s |grep country -i -m 1 |cut -d ':' -f 2 |xargs", app, ip)
-	country, err := exec.Command("bash", "-c", cmd).Output()
-	cmd2 := fmt.Sprintf("%s %s |grep organization -i -m 1 |cut -d ':' -f 2 |xargs", app, ip)
-	organization, err := exec.Command("bash", "-c", cmd2).Output()
-
-	if err != nil {
-		return "", ""
-	}
-
-	return strings.TrimSuffix(string(country), "\n"), strings.TrimSuffix(string(organization), "\n")
+func hashedVariable(value []byte) string {
+	h := sha1.New()
+	h.Write(value)
+	bs := h.Sum(nil)
+	return hex.EncodeToString(bs)
 }
 
 func OrganizeServers(body string, logo string, title string, serverChanged bool, previousGrade string) DomainInfoSend {
@@ -148,7 +92,7 @@ func OrganizeServers(body string, logo string, title string, serverChanged bool,
 		var server Servers
 		server.Address = value.IpAddress
 		server.Ssl_grade = value.Grade
-		server.Country, server.Owner = whoisParameters(value.IpAddress)
+		server.Country, server.Owner = processing.WhoisParameters(value.IpAddress)
 		if grades[value.Grade] < smallerGrade {
 			smallerGrade = grades[value.Grade]
 			domainInfoSend.Ssl_grade = value.Grade
@@ -174,7 +118,7 @@ type AnswerRequest struct {
 	Name          string
 	Logo          string
 	Title         string
-	RequestHash   string 
+	RequestHash   string
 	PreviousGrade string
 	UpdatedDate   int64
 }
@@ -184,7 +128,7 @@ func ValidateConditions(db *sql.DB, data AnswerRequest) DomainInfoSend {
 	if data.RequestHash == "" {
 		bodyHashed := hashedVariable(data.Body)
 		result = OrganizeServers(string(data.Body), data.Logo, data.Title, false, "")
-		model.CreateRowDatabase(db, data.Name, "", bodyHashed, result.Ssl_grade)
+		domains.Insert(db, data.Name, "", bodyHashed, result.Ssl_grade)
 		fmt.Println("New information saved")
 	} else {
 		const hour int64 = 3.6e+6
@@ -194,7 +138,7 @@ func ValidateConditions(db *sql.DB, data AnswerRequest) DomainInfoSend {
 			var timeNow int64 = time.Now().UnixNano() / int64(time.Millisecond)
 			if bodyHashed != data.RequestHash {
 				result = OrganizeServers(string(data.Body), data.Logo, data.Title, true, "")
-				model.UpdateRowDatabase(db, data.Name, bodyHashed, timeNow, result.Ssl_grade)
+				domains.Update(db, data.Name, bodyHashed, timeNow, result.Ssl_grade)
 				fmt.Println("Change server")
 			} else {
 				result = OrganizeServers(string(data.Body), data.Logo, data.Title, false, data.PreviousGrade)
@@ -208,3 +152,45 @@ func ValidateConditions(db *sql.DB, data AnswerRequest) DomainInfoSend {
 	}
 	return result
 }
+
+func GetDomainParameters(ctx *fasthttp.RequestCtx) {
+
+	var err error
+	defer func() {
+		if err != nil {
+				fmt.Printf("error: %v", err)
+				utils.DoJSONWrite(ctx, 400, err)
+		}
+	}()
+
+	var data AnswerRequest
+	name := fmt.Sprintf("%s", ctx.UserValue("name"))
+	data.Name = name
+	data.Logo, data.Title, err = services.GetHTMLParameters(fmt.Sprintf("https://www.%s", ctx.UserValue("name")))
+	if err != nil { return }
+	data.Body, err = services.RequestSSLabs(name)
+	if err != nil { return }
+	db, err := db.ConnectDatabase()
+	if err != nil { return }
+	data.RequestHash, data.PreviousGrade, data.UpdatedDate, err = domains.Find(db, name)
+	result := ValidateConditions(db, data)
+	utils.DoJSONWrite(ctx, 200, result)
+
+}
+
+func GetDomainsQueries(ctx *fasthttp.RequestCtx) {
+	var err error
+	defer func() {
+		if err != nil {
+				fmt.Printf("error: %v", err)
+				utils.DoJSONWrite(ctx, 400, err)
+		}
+	}()
+
+	db, err := db.ConnectDatabase()
+	if err != nil {return	} 
+	result, err := domains.FindIById(db)
+	if err != nil {return	} 
+	utils.DoJSONWrite(ctx, 200, result)
+}
+

@@ -1,8 +1,7 @@
-package model
+package db
 
 import (
 	"database/sql"
-	"fmt"
 
 	_ "github.com/lib/pq"
 )
@@ -10,7 +9,6 @@ import (
 func ConnectDatabase() (*sql.DB, error) {
 	db, err := sql.Open("postgres", "postgresql://root@gabrielortega:26257/serverinformation?sslmode=disable")
 	if err != nil {
-		fmt.Println("Falleeeeeeeeeeeeeeeeeeeeeee")
 		return db, err
 	}
 	return db, nil
